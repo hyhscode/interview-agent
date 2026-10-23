@@ -1,9 +1,9 @@
 import logging
 import time
 import uuid
-from fastapi import FastAPI, Request
+from fastapi import Depends,FastAPI, Request
 from fastapi.responses import JSONResponse
-from app.core.config import get_settings
+from app.core.config import get_settings,Settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,5 +52,5 @@ async def request_context(request:Request,call_next):
     return response
 
 @app.get("/healthz")
-async def healthz():
+async def healthz(settings:Settings = Depends(get_settings)):
     return{"status":"ok","env":settings.app_env}

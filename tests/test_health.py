@@ -15,3 +15,8 @@ def test_healthz_writes_request_id_header():
 
     assert "x-request-id" in response.headers
     assert len(response.headers["x-request-id"]) == 8
+
+def test_healthz_uses_overridden_settings(override_settings):
+    response = client.get("/healthz")
+
+    assert response.json()["env"] == "overridden"
