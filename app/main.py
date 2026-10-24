@@ -4,6 +4,7 @@ import uuid
 from fastapi import Depends,FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.core.config import get_settings,Settings
+from app.routers import auth as auth_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +20,8 @@ app = FastAPI(
     description="上传简历 + JD → 匹配度分析 → 模拟面试 → 面经检索",
     version = "0.1.0",
 )
+
+app.include_router(auth_router.router)
 
 @app.middleware("http")
 async def request_context(request:Request,call_next):
