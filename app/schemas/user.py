@@ -11,3 +11,11 @@ class UserOut(BaseModel):
     created_at:datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class LoginIn(BaseModel):
+    email: str
+    password:str
+
+class TokenOut(BaseModel):
+    access_token:str
+    token_type:str = "bearer"
