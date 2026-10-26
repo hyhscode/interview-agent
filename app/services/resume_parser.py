@@ -47,3 +47,6 @@ def parse_resume(text: str) -> tuple[ResumeParsed, int, int]:
     data = _extract_json(raw)                  # 第三层
     parsed = ResumeParsed.model_validate(data) # 第四层
     return parsed, input_tokens, output_tokens
+
+def looks_like_resume(parsed: ResumeParsed) -> bool:
+    return bool(parsed.name or parsed.skills or parsed.projects)
