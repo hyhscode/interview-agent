@@ -5,6 +5,7 @@ from fastapi import Depends,FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.core.config import get_settings,Settings
 from app.routers import auth as auth_router
+from app.routers import resumes as resumes_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +23,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router.router)
+app.include_router(resumes_router.router)
 
 @app.middleware("http")
 async def request_context(request:Request,call_next):
