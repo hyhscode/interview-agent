@@ -1,3 +1,7 @@
+import json
+import logging
+
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -5,8 +9,12 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.resume import Resume
 from app.models.user import User
-from app.schemas.resume import ResumeOut
+from app.schemas.resume import ResumeOut, ResumeParsed
 from app.services import pdf as pdf_service
+from app.services import resume_parser
+from app.services import llm as llm_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/resumes", tags=["简历"])
 
@@ -46,14 +54,34 @@ async def upload_resume(
         )
 
     resume = Resume(
-        user_id=current_user.id,   # ← 身份来自 token
+        user_id=current_user.id,
         filename=file.filename or "unnamed.pdf",
         raw_text=text,
         char_count=len(text.strip()),
     )
-
     db.add(resume)
+
+    # ---- 解析（可能失败，失败不影响"文件已保存"这件事）----
+    parsed: ResumeParsed | None = None
+    try:
+        parsed, _, _ = await run_in_threadpool(resume_parser.parse_resume, text)
+
+
+        resume.parsed_json = json.dumps(parsed.model_dump(), ensure_ascii=False)
+        resume.status = "parsed"
+    except Exception as exc:
+        # 不抛给用户：简历已经存好了，解析失败只标状态
+        resume.status = "parse_failed"
+        logger.warning("简历解析失败 resume=%s: %s", resume.filename, exc)
+
     db.commit()
     db.refresh(resume)
 
-    return resume
+    return ResumeOut(
+        id=resume.id,
+        filename=resume.filename,
+        char_count=resume.char_count,
+        status=resume.status,
+        created_at=resume.created_at,
+        parsed=parsed,
+    )

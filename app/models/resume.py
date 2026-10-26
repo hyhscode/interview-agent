@@ -19,6 +19,7 @@ class Resume(Base):
     raw_text:Mapped[str] = mapped_column(Text,default="")
     char_count:Mapped[int] = mapped_column(Integer,default=0)
     status:Mapped[str] = mapped_column(String(32),default="text_extracted")
+    parsed_json:Mapped[str] = mapped_column(Text,default="")
     created_at:Mapped[datetime] = mapped_column(DateTime,server_default=func.now())
 
     def __repr__(self) -> str:
