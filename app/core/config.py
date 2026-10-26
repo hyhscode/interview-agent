@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings,SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -12,7 +13,11 @@ class Settings(BaseSettings):
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     embedding_model: str = "BAAI/bge-m3"
     database_url: str = "sqlite:///./app.db"
-    jwt_secret_key: str
+    jwt_secret_key: str = Field(min_length=32)
+    # ↑ 最少 32 字符。为什么不在运行时才发现：
+    #   HMAC-SHA256 要求密钥不能为空，太短也不安全。
+    #   与其等到用户登录时报 500，不如启动就失败 ——
+    #   这正是本项目「启动即校验」的原则
     jwt_expire_minutes:int = 120
     model_config = SettingsConfigDict(
         env_file=".env",             # 去当前工作目录的 .env 文件读

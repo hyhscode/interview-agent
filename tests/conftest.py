@@ -22,7 +22,7 @@ def test_settings():
         app_env="test",                     # 真实 .env 里是 dev，这里故意写 test
         deepseek_api_key="test-key",        # 假 Key，不会真的去调 API
         siliconflow_api_key="test-key",
-        jwt_secret_key="test-secret",    
+        jwt_secret_key="test-secret-key-for-unit-tests-32chars",    
     )
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def override_settings():
             app_env="overridden",           # 故意用一个特殊值，方便断言
             deepseek_api_key="test-key",
             siliconflow_api_key="test-key",
-            jwt_secret_key="test-secret",
+            jwt_secret_key="test-secret-key-for-unit-tests-32chars",
         )
     app.dependency_overrides[get_settings] = fake_settings
     yield
