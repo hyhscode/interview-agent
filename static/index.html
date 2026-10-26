@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>求职面试官 Agent</title>
+
+<!-- ============================================================
+     这是纯原生前端：没有框架、没有构建工具，一个文件跑完全程。
+
+     为什么不用 Vue/React：
+       1. 你的项目只有 3 个界面，上框架是杀鸡用牛刀
+       2. 原生写一遍，你才知道框架到底帮你做了什么
+       3. 部署简单：一个静态文件，Nginx 直接托管
+
+     三个区块：① 登录 ② 简历 + 匹配分析 ③ 模拟面试
+     ============================================================ -->
+
+<style>
+  /* ---------- 全局样式 ---------- */
+  :root {
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --text: #2c2c2a;
+    --muted: #6b6b66;
+    --line: #e3e2dc;
+    --primary: #185fa5;
+    --primary-hover: #134b83;
+    --ok: #0f6e56;
+    --warn: #a05a00;
+    --err: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .badge {
+    font-size: 11px; font-weight: 400; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px;
+  }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=email], input[type=password], textarea {
+    width: 100%; padding: 8px 10px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  input:focus, textarea:focus { outline: 2px solid #cfe0f3; border-color: var(--primary); }
+
+  button {
+    padding: 8px 16px; font-size: 14px; font-family: inherit; cursor: pointer;
+    border: 1px solid var(--primary); background: var(--primary); color: #fff;
+    border-radius: 6px;
+  }
+  button:hover { background: var(--primary-hover); }
+  button.ghost { background: #fff; color: var(--primary); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+
+  /* ---------- 消息提示 ---------- */
+  #toast {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    padding: 8px 16px; border-radius: 6px; font-size: 13px; color: #fff;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+    z-index: 99;
+  }
+  #toast.show { opacity: 1; }
+  #toast.ok { background: var(--ok); }
+  #toast.err { background: var(--err); }
+  #toast.info { background: var(--primary); }
+
+  /* ---------- 面试对话 ---------- */
+  #chat { display: none; margin-top: 12px; }
+  .turn { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; max-width: 92%; }
+  .turn.interviewer { background: #eef4fb; border: 1px solid #d8e6f6; }
+  .turn.candidate { background: #f2f6f2; border: 1px solid #dce8dc; margin-left: auto; }
+  .turn .who { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .turn .stage { font-size: 11px; color: var(--primary); margin-left: 6px; }
+
+  /* ---------- 分析结果 ---------- */
+  .score { font-size: 34px; font-weight: 600; color: var(--primary); }
+  .score small { font-size: 13px; color: var(--muted); font-weight: 400; }
+  ul.clean { margin: 6px 0 0; padding-left: 18px; }
+  ul.clean li { margin-bottom: 3px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--line); margin: 14px 0; }
+</style>
+</head>
+<body>
+<div id="toast"></div>
+
+<div class="wrap">
+  <h1>求职面试官 Agent</h1>
+  <div class="sub">上传简历 + 岗位 JD → AI 分析匹配度 → 模拟面试追问</div>
+
+  <!-- ============================================================
+       区块 1：登录 / 注册
+       ============================================================ -->
+  <div class="card" id="authCard">
+    <h2>① 账号 <span class="badge" id="authState">未登录</span></h2>
+
+    <label>邮箱</label>
+    <input type="email" id="email" placeholder="you@example.com" autocomplete="username">
+
+    <label>密码（至少 8 位）</label>
+    <input type="password" id="password" placeholder="至少 8 位" autocomplete="current-password">
+
+    <div class="row">
+      <button id="btnLogin">登录</button>
+      <button class="ghost" id="btnRegister">注册</button>
+      <button class="ghost hidden" id="btnLogout">退出登录</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       区块 2：简历 + 匹配分析
+       ============================================================ -->
+  <div class="card hidden" id="resumeCard">
+    <h2>② 简历与匹配分析</h2>
+
+    <label>上传简历（PDF，10 MB 以内）</label>
+    <input type="file" id="resumeFile" accept="application/pdf">
+    <div class="row">
+      <button id="btnUpload">上传并解析</button>
+      <span class="muted" id="resumeInfo"></span>
+    </div>
+
+    <div class="divider"></div>
+
+    <label>目标岗位 JD（把招聘要求粘进来）</label>
+    <textarea id="jdText" placeholder="例如：负责 AI 应用后端开发，使用 Python/FastAPI，熟悉 RAG 检索链路……"></textarea>
+    <div class="row">
+      <button id="btnAnalyze">开始分析</button>
+      <span class="muted" id="analyzeState"></span>
+    </div>
+
+    <div id="analysisResult" class="hidden"></div>
+  </div>
+
+  <!-- ============================================================
+       区块 3：模拟面试
+       ============================================================ -->
+  <div class="card hidden" id="interviewCard">
+    <h2>③ 模拟面试 <span class="badge" id="stageBadge">未开始</span></h2>
+
+    <div class="row">
+      <button id="btnStart">开始面试</button>
+      <button class="ghost hidden" id="btnFinish">结束并生成评估</button>
+    </div>
+
+    <div id="chat"></div>
+
+    <div id="answerBox" class="hidden">
+      <label>你的回答</label>
+      <textarea id="answerText" placeholder="像真面试一样回答，越具体越好……"></textarea>
+      <div class="row">
+        <button id="btnAnswer">提交回答</button>
+        <span class="muted" id="answerState"></span>
+      </div>
+    </div>
+
+    <div id="summaryBox" class="hidden"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   一、全局状态与工具函数
+   ============================================================ */
+
+// 用 localStorage 存在浏览器里的 token。刷新页面不丢，关浏览器也不丢
+let TOKEN = localStorage.getItem("token") || "";
+
+// 当前选中的简历 id、面试会话 id
+let resumeId = null;
+let sessionId = null;
+
+// 阶段的中文名（后端传的是英文 key）
+const STAGE_LABEL = {
+  self_intro: "自我介绍",
+  project_deep_dive: "项目深挖",
+  tech_qa: "技术追问",
+  candidate_questions: "候选人反问",
+};
+
+/** 显示一条顶部提示 */
+function toast(msg, type = "info") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "show " + type;
+  setTimeout(() => (el.className = ""), 2600);
+}
+
+/**
+ * 统一的请求封装。★ 这是前端最重要的一个函数。
+ *
+ * 为什么要封装：每个接口都要做同样三件事 ——
+ *   1. 拼 Authorization 头（带 token）
+ *   2. 统一解析 JSON
+ *   3. 统一处理错误（401 就踢回登录）
+ * 不封装的话，这三段会在每个按钮里重复一遍。
+ */
+async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+
+  // 有 token 就带上。注意格式：Bearer + 一个空格 + token
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+
+  // 如果是传 JSON 字符串，要声明 Content-Type
+  // （传 FormData 时【绝对不能】手动设 Content-Type —— 浏览器要自己加 boundary）
+  if (options.body && typeof options.body === "string" && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const resp = await fetch(path, { ...options, headers });
+
+  // 401 = token 失效，清掉本地 token，回到未登录状态
+  if (resp.status === 401) {
+    TOKEN = "";
+    localStorage.removeItem("token");
+    setLoggedIn(false);
+    throw new Error("登录已失效，请重新登录");
+  }
+
+  const text = await resp.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!resp.ok) {
+    // FastAPI 的错误格式是 {"detail": "..."} 或 {"detail": [{...}]}（校验错误）
+    const detail = data && data.detail;
+    const msg = typeof detail === "string" ? detail : JSON.stringify(detail);
+    throw new Error(msg || `请求失败（${resp.status}）`);
+  }
+
+  return data;
+}
+
+/** 切换登录/未登录的界面状态 */
+function setLoggedIn(logged) {
+  document.getElementById("authState").textContent = logged ? "已登录" : "未登录";
+  document.getElementById("btnLogin").classList.toggle("hidden", logged);
+  document.getElementById("btnRegister").classList.toggle("hidden", logged);
+  document.getElementById("btnLogout").classList.toggle("hidden", !logged);
+  document.getElementById("resumeCard").classList.toggle("hidden", !logged);
+  document.getElementById("interviewCard").classList.toggle("hidden", !logged);
+  document.getElementById("email").disabled = logged;
+  document.getElementById("password").disabled = logged;
+}
+
+/* ============================================================
+   二、登录 / 注册
+   ============================================================ */
+
+async function doAuth(mode) {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  if (!email || !password) return toast("邮箱和密码都要填", "err");
+
+  try {
+    if (mode === "register") {
+      await api("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      toast("注册成功，正在登录…", "ok");
+    }
+
+    const data = await api("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+
+    TOKEN = data.access_token;
+    localStorage.setItem("token", TOKEN);
+    setLoggedIn(true);
+    toast("登录成功", "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+document.getElementById("btnLogin").onclick = () => doAuth("login");
+document.getElementById("btnRegister").onclick = () => doAuth("register");
+document.getElementById("btnLogout").onclick = () => {
+  TOKEN = "";
+  localStorage.removeItem("token");
+  resumeId = null;
+  sessionId = null;
+  document.getElementById("chat").innerHTML = "";
+  setLoggedIn(false);
+  toast("已退出", "info");
+};
+
+/* ============================================================
+   三、上传简历
+   ============================================================ */
+
+document.getElementById("btnUpload").onclick = async () => {
+  const input = document.getElementById("resumeFile");
+  const file = input.files[0];
+  if (!file) return toast("先选一个 PDF", "err");
+
+  const info = document.getElementById("resumeInfo");
+  info.textContent = "上传中…（解析要调 AI，约 3~8 秒）";
+
+  try {
+    // ★ FormData 是浏览器的"表单数据"对象。
+    //   文件上传必须用它，不能把文件塞进 JSON.stringify
+    const form = new FormData();
+    form.append("file", file);
+
+    const data = await api("/resumes", { method: "POST", body: form });
+
+    resumeId = data.id;
+    info.textContent = `已解析：${data.char_count} 字 · 姓名「${data.parsed?.name || "未识别"}」`;
+    toast("简历解析完成", "ok");
+  } catch (e) {
+    info.textContent = "";
+    toast(e.message, "err");
+  }
+};
+
+/* ============================================================
+   四、匹配分析（异步任务 + 轮询）
+   ============================================================ */
+
+document.getElementById("btnAnalyze").onclick = async () => {
+  if (!resumeId) return toast("先上传简历", "err");
+
+  const jd = document.getElementById("jdText").value.trim();
+  if (jd.length < 20) return toast("JD 太短了，至少 20 字", "err");
+
+  const state = document.getElementById("analyzeState");
+  state.textContent = "已提交，等待 AI 分析…";
+
+  try {
+    // 第一步：触发（后端返回 202，表示"接了单"）
+    await api(`/resumes/${resumeId}/analysis`, {
+      method: "POST",
+      body: JSON.stringify({ jd_text: jd }),
+    });
+
+    // 第二步：轮询查询结果
+    // ★ 为什么轮询：后端是异步任务，POST 只保证"开始跑了"，
+    //   结果得另外查。直到 status 变成 done 或 failed 为止。
+    let result = null;
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1500)); // 等 1.5 秒
+      const data = await api(`/resumes/${resumeId}/analysis`);
+
+      if (data.status === "done") {
+        result = data;
+        break;
+      }
+      if (data.status === "failed") throw new Error("分析失败，请重试");
+
+      state.textContent = `分析中…（${i + 1}）`;
+    }
+
+    if (!result) throw new Error("分析超时，请稍后重试");
+
+    state.textContent = "";
+    renderAnalysis(result.result);
+    toast("分析完成", "ok");
+  } catch (e) {
+    state.textContent = "";
+    toast(e.message, "err");
+  }
+};
+
+/** 把分析结果渲染成 HTML */
+function renderAnalysis(r) {
+  const box = document.getElementById("analysisResult");
+  box.classList.remove("hidden");
+
+  // 简单的 HTML 转义，防止模型输出里带标签把页面搞坏
+  const esc = (s) =>
+    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const list = (arr, cls) =>
+    arr && arr.length
+      ? `<ul class="clean ${cls || ""}">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
+      : `<p class="muted">（无）</p>`;
+
+  box.innerHTML = `
+    <div class="divider"></div>
+    <div class="score">${r.score}<small> / 100 匹配度</small></div>
+    <p>${esc(r.summary)}</p>
+    <p><b>✅ 匹配的点</b></p>${list(r.matched)}
+    <p><b>⚠️ 缺口</b></p>${list(r.gaps)}
+    <p><b>💡 建议怎么改</b></p>${list(r.suggestions)}
+  `;
+}
+
+/* ============================================================
+   五、模拟面试
+   ============================================================ */
+
+/** 往对话区追加一条消息 */
+function addTurn(role, content, stage) {
+  const chat = document.getElementById("chat");
+  chat.style.display = "block";
+
+  const div = document.createElement("div");
+  div.className = "turn " + role;
+  div.innerHTML = `
+    <div class="who">${role === "interviewer" ? "面试官" : "我"}${
+    stage ? `<span class="stage">${STAGE_LABEL[stage] || stage}</span>` : ""
+  }</div>
+    <div>${String(content).replace(/</g, "&lt;")}</div>
+  `;
+  chat.appendChild(div);
+  div.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+document.getElementById("btnStart").onclick = async () => {
+  if (!resumeId) return toast("先上传简历", "err");
+
+  try {
+    const data = await api("/interviews", {
+      method: "POST",
+      body: JSON.stringify({ resume_id: resumeId }),
+    });
+
+    sessionId = data.id;
+    document.getElementById("chat").innerHTML = "";
+    document.getElementById("summaryBox").classList.add("hidden");
+
+    // 后端已经把第一个问题放在 turns 里了
+    data.turns.forEach((t) => addTurn(t.role, t.content, t.stage));
+
+    document.getElementById("stageBadge").textContent =
+      STAGE_LABEL[data.stage] || data.stage;
+    document.getElementById("answerBox").classList.remove("hidden");
+    document.getElementById("btnFinish").classList.remove("hidden");
+    document.getElementById("btnStart").disabled = true;
+
+    toast(`面试开始（第 1 轮）`, "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("btnAnswer").onclick = async () => {
+  if (!sessionId) return toast("先开始面试", "err");
+
+  const box = document.getElementById("answerText");
+  const answer = box.value.trim();
+  if (answer.length < 2) return toast("回答太短了", "err");
+
+  const state = document.getElementById("answerState");
+  state.textContent = "AI 面试官思考中…";
+  document.getElementById("btnAnswer").disabled = true;
+
+  try {
+    const data = await api(`/interviews/${sessionId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ answer }),
+    });
+
+    addTurn("candidate", answer);
+    box.value = "";
+
+    if (data.is_finished) {
+      addTurn("interviewer", "（面试结束，请点击「结束并生成评估」查看评价）");
+      document.getElementById("answerBox").classList.add("hidden");
+      document.getElementById("stageBadge").textContent = "已结束";
+    } else {
+      addTurn("interviewer", data.question, data.stage);
+      document.getElementById("stageBadge").textContent =
+        STAGE_LABEL[data.stage] || data.stage;
+    }
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    state.textContent = "";
+    document.getElementById("btnAnswer").disabled = false;
+  }
+};
+
+document.getElementById("btnFinish").onclick = async () => {
+  if (!sessionId) return;
+
+  toast("正在生成评估…", "info");
+
+  try {
+    const data = await api(`/interviews/${sessionId}/finish`, { method: "POST" });
+
+    const box = document.getElementById("summaryBox");
+    box.classList.remove("hidden");
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const list = (arr) =>
+      arr && arr.length ? `<ul class="clean">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="muted">（无）</p>`;
+
+    box.innerHTML = `
+      <div class="divider"></div>
+      <div class="score">${data.score}<small> / 100 表现评分</small></div>
+      <p>${esc(data.summary)}</p>
+      <p><b>👍 表现好的</b></p>${list(data.strengths)}
+      <p><b>🔧 需要补的</b></p>${list(data.weaknesses)}
+    `;
+
+    document.getElementById("btnFinish").classList.add("hidden");
+    document.getElementById("answerBox").classList.add("hidden");
+  } catch (e) {
+    toast(e.message, "err");
+  }
+};
+
+/* ============================================================
+   六、页面加载时：如果本地有 token，试着直接进
+   ============================================================ */
+(async function init() {
+  if (!TOKEN) return setLoggedIn(false);
+  try {
+    await api("/auth/me");   // 验证 token 还有效
+    setLoggedIn(true);
+  } catch {
+    setLoggedIn(false);
+  }
+})();
+</script>
+</body>
+</html>

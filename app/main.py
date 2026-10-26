@@ -3,6 +3,7 @@ import time
 import uuid
 from fastapi import Depends,FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.core.config import get_settings,Settings
 from app.routers import auth as auth_router
 from app.routers import resumes as resumes_router
@@ -65,3 +66,8 @@ async def healthz(settings:Settings = Depends(get_settings)):
 
 app.include_router(interviews_router.router)
 app.include_router(kb_router.router)
+
+# 挂载前端静态文件到 /app
+# 为什么不挂载在 "/" ：挂在根路径会抢走所有未匹配的请求，
+# /docs、/healthz 这些容易被影响。给个前缀最安全。
+app.mount("/app", StaticFiles(directory="static", html=True), name="static")

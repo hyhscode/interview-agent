@@ -1,5 +1,6 @@
 """面试接口。B4 只做"开局 + 查历史"，B6 加"继续回答"。"""
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +23,8 @@ from app.schemas.interview import (
 )
 from app.services import interview as interview_service
 from app.services import interview_state
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/interviews", tags=["面试"])
 
