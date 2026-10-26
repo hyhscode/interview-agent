@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from app.core.config import get_settings,Settings
 from app.routers import auth as auth_router
 from app.routers import resumes as resumes_router
+from app.routers import interviews as interviews_router
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,3 +61,5 @@ async def request_context(request:Request,call_next):
 @app.get("/healthz")
 async def healthz(settings:Settings = Depends(get_settings)):
     return{"status":"ok","env":settings.app_env}
+
+app.include_router(interviews_router.router)
