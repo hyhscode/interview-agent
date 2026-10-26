@@ -25,7 +25,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.models.interview import InterviewSession, InterviewTurn
+from app.models.interview import InterviewTurn
 from app.services.llm import chat
 
 logger = logging.getLogger(__name__)

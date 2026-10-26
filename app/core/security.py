@@ -2,7 +2,6 @@ from pwdlib import PasswordHash
 from datetime import datetime,timedelta,timezone
 
 import jwt
-from jwt.exceptions import InvalidTokenError
 
 from app.core.config import get_settings
 
