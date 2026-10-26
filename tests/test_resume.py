@@ -1,30 +1,5 @@
 
-import pytest
-
-from app.schemas.resume import Project, ResumeParsed
-
-
-@pytest.fixture
-def fake_pipeline(monkeypatch):
-
-
-    def fake_extract(pdf_bytes):
-        return "张三 某某大学 软件工程 专业技能 Python FastAPI MySQL Redis Docker 项目经历 校园二手交易平台 负责后端开发", 2
-
-    def fake_parse(text):
-        return (
-            ResumeParsed(
-                name="张三",
-                skills=["Python", "FastAPI"],
-                projects=[Project(name="某项目", tech=["FastAPI"], highlights=["做了点什么"])],
-            ),
-            100,   # 假输入 token
-            50,    # 假输出 token
-        )
-
-    # patch 的目标路径是"【使用它的模块】.函数名"，不是"定义它的模块"
-    monkeypatch.setattr("app.routers.resumes.pdf_service.extract_text", fake_extract)
-    monkeypatch.setattr("app.routers.resumes.resume_parser.parse_resume", fake_parse)
+from app.schemas.resume import ResumeParsed
 
 
 def _register_and_login(client, email):

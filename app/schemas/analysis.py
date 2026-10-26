@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class AnalysisResult(BaseModel):
     score: int = 0
-    summmary:str = ""
+    summary:str = ""
     matched: list[str] = []
     gaps:list[str] = []
     suggestions: list[str] = []

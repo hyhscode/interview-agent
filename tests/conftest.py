@@ -11,6 +11,8 @@ import app.models as models
 from app.db.session import Base, get_db
 from app.main import app
 
+from app.schemas.resume import Project, ResumeParsed
+
 
 @pytest.fixture
 def test_settings():
@@ -66,3 +68,36 @@ def client(test_engine):
         yield c
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def fake_pipeline(monkeypatch):
+    """把「抽 PDF 文字」和「LLM 解析」两步都换成假的。
+
+    放在 conftest 里，因为 test_resume.py 和 test_analysis.py 都要用。
+    patch 的目标路径是"【使用它的模块】.函数名"，不是"定义它的模块"。
+    """
+
+    def fake_extract(pdf_bytes):
+        # 长度必须 > 50，否则会被"扫描件"判定拦住（那个阈值是 50 字符）
+        return (
+            "张三 某某大学 软件工程 专业技能 Python FastAPI MySQL Redis Docker "
+            "项目经历 校园二手交易平台 负责后端开发",
+            2,
+        )
+
+    def fake_parse(text):
+        return (
+            ResumeParsed(
+                name="张三",
+                skills=["Python", "FastAPI"],
+                projects=[
+                    Project(name="某项目", tech=["FastAPI"], highlights=["做了点什么"])
+                ],
+            ),
+            100,   # 假输入 token
+            50,    # 假输出 token
+        )
+
+    monkeypatch.setattr("app.routers.resumes.pdf_service.extract_text", fake_extract)
+    monkeypatch.setattr("app.routers.resumes.resume_parser.parse_resume", fake_parse)
