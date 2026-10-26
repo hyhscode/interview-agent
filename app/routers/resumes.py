@@ -3,8 +3,8 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status,BackgroundTasks
+from sqlalchemy import select,desc
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -14,7 +14,9 @@ from app.models.resume import Resume
 from app.models.user import User
 from app.schemas.resume import ResumeOut, ResumeParsed
 from app.services import pdf as pdf_service
-from app.services import resume_parser
+from app.services import resume_parser,analyzer
+from app.models.analysis import Analysis
+from app.schemas.analysis import AnalysisResult,AnalysisOut,JdIn
 
 logger = logging.getLogger(__name__)
 
@@ -121,3 +123,83 @@ def get_resume(
 
 
     return _to_out(resume)
+
+@router.post(
+    "/{resume_id}/analysis",
+    response_model=AnalysisOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_analysis(
+    resume_id:int,
+    payload:JdIn,
+    background_tasks:BackgroundTasks,
+    current_user:User = Depends(get_current_user),
+    db:Session=Depends(get_db),
+):
+    resume = db.execute(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == current_user.id)
+    ).scalar_one_or_none()
+
+    if resume is None:
+        raise HTTPException(status_code=404, detail="简历不存在")
+
+    if resume.status != "parsed":
+        raise HTTPException(status_code=400, detail="简历还没解析完成，无法分析")
+
+    analysis = Analysis(
+        resume_id=resume.id,
+        user_id=current_user.id,
+        jd_text=payload.jd_text,
+        status="pending",
+    )
+    db.add(analysis)
+    db.commit()
+    db.refresh(analysis)
+
+    background_tasks.add_task(analyzer.run_analysis_task, analysis.id)
+
+    return AnalysisOut(
+        id=analysis.id,
+        resume_id=analysis.resume_id,
+        status=analysis.status,
+        score=analysis.score,
+        result=None,
+        created_at=analysis.created_at,
+    )
+
+@router.get("/{resume_id}/analysis", response_model=AnalysisOut)
+def get_analysis(
+    resume_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    resume = db.execute(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == current_user.id)
+    ).scalar_one_or_none()
+
+    if resume is None:
+        raise HTTPException(status_code=404, detail="简历不存在")
+
+    stmt = (
+        select(Analysis)
+        .where(Analysis.resume_id == resume_id, Analysis.user_id == current_user.id)
+        .order_by(desc(Analysis.id))
+        .limit(1)
+    )
+    analysis = db.execute(stmt).scalar_one_or_none()
+
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="还没有分析记录")
+
+    result = None
+    if analysis.result_json:
+        result = AnalysisResult.model_validate_json(analysis.result_json)
+
+    return AnalysisOut(
+        id=analysis.id,
+        resume_id=analysis.resume_id,
+        status=analysis.status,
+        score=analysis.score,
+        result=result,
+        created_at=analysis.created_at,
+    )
