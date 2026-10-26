@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.kb import KbChunk, KbDocument
+from app.services.bm25 import BM25, tokenize
 from app.services.embeddings import embed_query, embed_texts
 
 
@@ -136,3 +137,62 @@ def search(db: Session, *, query: str, top_k: int = 3) -> list[tuple[KbChunk, fl
     top_indices = scores.argsort()[::-1][:top_k]
 
     return [(chunks[i], float(scores[i])) for i in top_indices]
+
+
+# ============================================================
+# B5b：混合检索（向量 + BM25 关键词，用 RRF 融合）
+# ============================================================
+
+RECALL_K = 10
+# 每一路先各取 10 个候选，再融合。取太少会漏，取太多等于没筛
+
+RRF_K = 60
+# RRF 的平滑常数。作用是压住"第 1 名"的优势，
+# 让两路都排前面的文档真正胜出，而不是被某一路的第 1 名绑架
+
+
+def vector_scores(db: Session, query: str) -> tuple[list[KbChunk], np.ndarray]:
+    """纯向量打分，返回 (所有块, 每块的余弦分)。"""
+    chunks = list(db.execute(select(KbChunk)).scalars().all())
+    if not chunks:
+        return [], np.array([], dtype=np.float32)
+
+    query_vec = np.array(embed_query(query), dtype=np.float32)
+    matrix = np.array([json.loads(c.embedding_json) for c in chunks], dtype=np.float32)
+
+    dots = matrix @ query_vec
+    norms = np.linalg.norm(matrix, axis=1) * np.linalg.norm(query_vec) + 1e-9
+    return chunks, dots / norms
+
+
+def hybrid_search(
+    db: Session, *, query: str, top_k: int = 3
+) -> list[tuple[KbChunk, float]]:
+    """混合检索：向量召回 + BM25 召回 → RRF 融合 → 取 top_k。
+
+    ★ 为什么不能把两路分数直接相加：
+      余弦相似度在 0~1 之间，BM25 的分数没有上界（可能 5，也可能 50）。
+      直接相加 = 让 BM25 主导一切。所以必须【用排名融合，不用分数融合】。
+    """
+    chunks, vec = vector_scores(db, query)
+    if not chunks:
+        return []
+
+    # ---- 第 1 路：向量召回 ----
+    vec_ranked = list(vec.argsort()[::-1][:RECALL_K])
+
+    # ---- 第 2 路：BM25 关键词召回 ----
+    bm25 = BM25([tokenize(c.content) for c in chunks])
+    bm25_ranked = [idx for idx, _ in bm25.rank(query)][:RECALL_K]
+
+    # ---- 融合：Reciprocal Rank Fusion ----
+    # 公式：得分 = Σ 1 / (RRF_K + 该路排名)
+    # 第 1 名得 1/61，第 2 名 1/62 …… 只依排名，不依赖分数高低
+    fused: dict[int, float] = {}
+    for rank, idx in enumerate(vec_ranked, start=1):
+        fused[idx] = fused.get(idx, 0.0) + 1.0 / (RRF_K + rank)
+    for rank, idx in enumerate(bm25_ranked, start=1):
+        fused[idx] = fused.get(idx, 0.0) + 1.0 / (RRF_K + rank)
+
+    ordered = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+    return [(chunks[i], score) for i, score in ordered]

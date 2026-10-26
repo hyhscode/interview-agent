@@ -81,7 +81,7 @@ def search_kb(
 ):
     """按语义检索面经片段。"""
     try:
-        results = kb_service.search(db, query=q, top_k=top_k)
+        results = kb_service.hybrid_search(db, query=q, top_k=top_k)
     except Exception:
         logger.exception("检索失败 q=%s", q)
         raise HTTPException(status_code=503, detail="检索服务暂时不可用")
