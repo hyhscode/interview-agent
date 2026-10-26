@@ -7,6 +7,7 @@ from app.core.config import get_settings,Settings
 from app.routers import auth as auth_router
 from app.routers import resumes as resumes_router
 from app.routers import interviews as interviews_router
+from app.routers import kb as kb_router
 
 
 logging.basicConfig(
@@ -63,3 +64,4 @@ async def healthz(settings:Settings = Depends(get_settings)):
     return{"status":"ok","env":settings.app_env}
 
 app.include_router(interviews_router.router)
+app.include_router(kb_router.router)
